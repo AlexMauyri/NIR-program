@@ -1130,7 +1130,7 @@ requires-dist = [
 [[package]]
 name = "nir-etl"
 version = "0.1.0"
-source = { virtual = "src/etl" }
+source = { editable = "src/etl" }
 dependencies = [
     { name = "prefect" },
     { name = "psycopg", extra = ["binary"] },

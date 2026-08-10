@@ -18,7 +18,7 @@ if config.config_file_name is not None:
 # Импорт Base + явный импорт всех модулей с моделями,
 # чтобы SQLAlchemy увидела таблицы и сгенерировала миграции
 from models.base import Base
-from models import StockPrice  # noqa: F401
+from models import *  # noqa: F401
 
 target_metadata = Base.metadata
 
