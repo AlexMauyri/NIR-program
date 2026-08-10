@@ -1,0 +1,11 @@
+[project]
+name = "nir-etl"
+version = "0.1.0"
+description = "Prefect ETL pipeline for stock prices"
+requires-python = ">=3.12"
+
+dependencies = [
+    "prefect>=3.8.2",
+    "psycopg[binary]>=3.3.4",
+    "requests>=2.34.2",
+]
