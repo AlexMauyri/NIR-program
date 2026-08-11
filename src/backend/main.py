@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from database import engine
 from models.base import Base
+from routers import stocks
 
 
 @asynccontextmanager
@@ -20,6 +21,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(stocks.router)
 
 @app.get("/health")
 async def health_check():

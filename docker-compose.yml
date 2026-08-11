@@ -143,6 +143,7 @@ services:
       PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/prefect_db
       PREFECT_HOME: /data
       HOME: /data
+      TZ: Europe/Samara
     ports:
       - "4200:4200"
     volumes:
