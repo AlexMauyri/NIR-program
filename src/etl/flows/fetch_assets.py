@@ -1,5 +1,5 @@
 import argparse
-import logging
+import os
 import time
 from datetime import datetime, timedelta
 
@@ -14,8 +14,6 @@ from tasks.extract import (
 from tasks.load import load_records
 from tasks.transform import transform_records
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger(__name__)
 
 _ASSET_CONFIG = {
     "stock": (fetch_sber_history, "stock_prices"),
@@ -35,6 +33,25 @@ def _chunk_date_range(start_date: str, end_date: str, chunk_days: int = 30):
         chunks.append((current.isoformat(), chunk_end.isoformat()))
         current = chunk_end + timedelta(days=1)
     return chunks
+
+
+def _resolve_dates(start_date: str | None, end_date: str | None) -> tuple[str, str]:
+    """
+    Если start_date в прошлом — backfill до вчера.
+    Если start_date не указан — берём вчера (ежедневный инкремент).
+    """
+    yesterday = (datetime.now() - timedelta(days=1)).date().isoformat()
+
+    if not start_date:
+        return yesterday, yesterday
+
+    start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else datetime.strptime(yesterday, "%Y-%m-%d").date()
+
+    if not end_date and start < datetime.strptime(yesterday, "%Y-%m-%d").date():
+        end = datetime.strptime(yesterday, "%Y-%m-%d").date()
+
+    return start.isoformat(), end.isoformat()
 
 
 @task(retries=3, retry_delay_seconds=10, log_prints=True)
@@ -67,17 +84,22 @@ def load_task(records: list[dict], table_name: str, db_url: str) -> int:
 
 @flow(name="fetch-all-assets", log_prints=True)
 def fetch_all_assets(
-    start_date: str,
-    end_date: str,
-    db_url: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db_url: str | None = None,
     chunk_days: int = 30,
     sleep_seconds: float = 1.5,
 ):
     logger = get_run_logger()
-    total = 0
 
+    db_url = db_url or os.environ["DATABASE_URL"]
+    start, end = _resolve_dates(start_date, end_date)
+
+    logger.info("Resolved date range: %s to %s", start, end)
+
+    total = 0
     for asset_type, (_, table_name) in _ASSET_CONFIG.items():
-        chunks = _chunk_date_range(start_date, end_date, chunk_days)
+        chunks = _chunk_date_range(start, end, chunk_days)
         logger.info("=== ASSET: %s | chunks: %d ===", asset_type, len(chunks))
 
         asset_total = 0
@@ -107,9 +129,9 @@ def fetch_all_assets(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start_date", required=True)
-    parser.add_argument("--end_date", required=True)
-    parser.add_argument("--db_url", required=True)
+    parser.add_argument("--start_date", default=None, help="YYYY-MM-DD or omit for yesterday")
+    parser.add_argument("--end_date", default=None, help="YYYY-MM-DD or omit for auto-resolve")
+    parser.add_argument("--db_url", default=None, help="or set DATABASE_URL env")
     parser.add_argument("--chunk_days", type=int, default=30)
     parser.add_argument("--sleep_seconds", type=float, default=1.5)
     args = parser.parse_args()

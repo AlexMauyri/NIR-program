@@ -89,19 +89,66 @@ services:
     networks:
       - nir_network
 
+  backend-migrate:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    container_name: backend-migrate
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB}
+    command: >
+      /bin/sh -c "
+      alembic upgrade head &&
+      echo 'Migrations applied'
+      "
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - nir_network
+
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    container_name: backend-api
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8000:8000"
+    depends_on:
+      mlflow:
+        condition: service_started      
+      backend-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - nir_network
+
   prefect-server:
-    image: prefecthq/prefect:3.3.0-python3.12
+    build:
+      context: ./src/etl
+      dockerfile: Dockerfile
+      target: server
     container_name: prefect-server
     environment:
       PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/prefect_db
       PREFECT_HOME: /data
+      HOME: /data
     ports:
       - "4200:4200"
     volumes:
       - prefect_data:/data
-    command: prefect server start --host 0.0.0.0
     depends_on:
-      postgres-db:
+      backend:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:4200/api/health', timeout=1)"]
@@ -114,25 +161,22 @@ services:
       - nir_network
 
   prefect-worker:
-    image: prefecthq/prefect:3.3.0-python3.12
+    build:
+      context: ./src/etl
+      dockerfile: Dockerfile
+      target: worker
     container_name: prefect-worker
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
-    volumes:
-      - ./src/etl:/opt/etl
-    working_dir: /opt/etl
-    command: >
-      /bin/sh -c "
-      pip install uv &&
-      uv sync &&
-      prefect worker start --pool default --limit 1
-      "
+      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/${POSTGRES_DB}
     depends_on:
       prefect-server:
-        condition: service_started
+        condition: service_healthy
     restart: always
     networks:
       - nir_network
+
+
 
 volumes:
   postgres_data:
