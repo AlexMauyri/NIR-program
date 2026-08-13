@@ -2,6 +2,8 @@ import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from prefect import task, get_run_logger
+
 
 _COLUMN_MAP = {
     "stock": {
@@ -56,7 +58,11 @@ def _to_date(value: Any) -> datetime.date | None:
         return None
 
 
-def transform_records(records: list[dict], asset_type: str) -> list[dict]:
+@task(log_prints=True)
+def transform_ohlc_records(records: list[dict], asset_type: str) -> list[dict]:
+    logger = get_run_logger()
+    logger.info(">>> TRANSFORM %s: %d raw rows", asset_type, len(records))
+
     mapping = _COLUMN_MAP[asset_type]
     result: list[dict] = []
 
@@ -81,4 +87,5 @@ def transform_records(records: list[dict], asset_type: str) -> list[dict]:
 
         result.append(record)
 
+    logger.info("<<< TRANSFORM %s: %d clean rows", asset_type, len(result))
     return result

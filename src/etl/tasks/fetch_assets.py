@@ -2,9 +2,12 @@ import datetime
 from typing import Optional
 
 import requests
+from prefect import task, get_run_logger
 
 
+@task(retries=3, retry_delay_seconds=10, log_prints=True)
 def _paginated_fetch(url: str, params: dict, session: requests.Session) -> list[dict]:
+    logger = get_run_logger()
     records: list[dict] = []
     offset = 0
     while True:
@@ -21,24 +24,28 @@ def _paginated_fetch(url: str, params: dict, session: requests.Session) -> list[
     return records
 
 
-def fetch_sber_history(
+@task(retries=3, retry_delay_seconds=10, log_prints=True)
+def fetch_sber_moex(
     start_date: str,
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
+    logger = get_run_logger()
+    logger.info(">>> FETCH sber %s..%s", start_date, end_date)
     sess = session or requests.Session()
     url = (
         "https://iss.moex.com/iss/history/engines/stock/"
         "markets/shares/securities/SBER.json"
     )
     params = {"from": start_date, "till": end_date}
-    records = _paginated_fetch(url, params, sess)
+    records = _paginated_fetch.fn(url, params, sess)
     if session is None:
         sess.close()
+    logger.info("<<< FETCH sber returned %d raw rows", len(records))
     return records
 
 
-def _fetch_yahoo_history(
+def _fetch_yahoo_ohlc(
     ticker: str,
     start_date: str,
     end_date: str,
@@ -89,37 +96,49 @@ def _fetch_yahoo_history(
     return records
 
 
-def fetch_usd_rub_history(
+@task(retries=3, retry_delay_seconds=10, log_prints=True)
+def fetch_usdrub_yahoo(
     start_date: str,
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
+    logger = get_run_logger()
+    logger.info(">>> FETCH usd_rub %s..%s", start_date, end_date)
     sess = session or requests.Session()
-    records = _fetch_yahoo_history("USDRUB=X", start_date, end_date, sess)
+    records = _fetch_yahoo_ohlc("USDRUB=X", start_date, end_date, sess)
     if session is None:
         sess.close()
+    logger.info("<<< FETCH usd_rub returned %d raw rows", len(records))
     return records
 
 
-def fetch_gold_history(
+@task(retries=3, retry_delay_seconds=10, log_prints=True)
+def fetch_gold_yahoo(
     start_date: str,
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
+    logger = get_run_logger()
+    logger.info(">>> FETCH gold %s..%s", start_date, end_date)
     sess = session or requests.Session()
-    records = _fetch_yahoo_history("GC=F", start_date, end_date, sess)
+    records = _fetch_yahoo_ohlc("GC=F", start_date, end_date, sess)
     if session is None:
         sess.close()
+    logger.info("<<< FETCH gold returned %d raw rows", len(records))
     return records
 
 
-def fetch_brent_history(
+@task(retries=3, retry_delay_seconds=10, log_prints=True)
+def fetch_brent_yahoo(
     start_date: str,
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
+    logger = get_run_logger()
+    logger.info(">>> FETCH oil %s..%s", start_date, end_date)
     sess = session or requests.Session()
-    records = _fetch_yahoo_history("BZ=F", start_date, end_date, sess)
+    records = _fetch_yahoo_ohlc("BZ=F", start_date, end_date, sess)
     if session is None:
         sess.close()
+    logger.info("<<< FETCH oil returned %d raw rows", len(records))
     return records

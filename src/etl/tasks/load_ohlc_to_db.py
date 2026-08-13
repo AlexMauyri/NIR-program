@@ -2,20 +2,27 @@ import logging
 from typing import Any
 
 import psycopg
+from prefect import task, get_run_logger
+
+from configs import DBConfig
 
 logger = logging.getLogger(__name__)
 
 
-def load_records(
+@task(log_prints=True)
+def load_ohlc_to_db(
     records: list[dict[str, Any]],
     table_name: str,
-    db_url: str,
+    db_config: DBConfig,
 ) -> int:
+    logger = get_run_logger()
+    logger.info(">>> LOAD %s: %d rows into %s", table_name, len(records), table_name)
+
     if not records:
         logger.info("No records to load into %s", table_name)
         return 0
 
-    with psycopg.connect(db_url) as conn:
+    with psycopg.connect(db_config.connection_string) as conn:
         with conn.cursor() as cur:
             if "ticker" in records[0]:
                 cur.executemany(
@@ -52,5 +59,5 @@ def load_records(
 
             conn.commit()
 
-    logger.info("Loaded %d records into %s", len(records), table_name)
+    logger.info("<<< LOAD %s: %d rows inserted/updated", table_name, len(records))
     return len(records)

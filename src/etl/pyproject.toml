@@ -5,9 +5,15 @@ description = "Prefect ETL pipeline for stock prices"
 requires-python = ">=3.12"
 
 dependencies = [
+    "boto3>=1.43.69",
+    "botocore>=1.43.69",
+    "numpy>=2.5.2",
+    "pandas>=3.0.5",
     "prefect>=3.8.2",
     "psycopg[binary]>=3.3.4",
+    "pyarrow>=25.0.1",
     "requests>=2.34.2",
+    "ta-lib>=0.7.1",
 ]
 
 [build-system]

@@ -10,9 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY . .
-
+COPY pyproject.toml .python-version ./
 RUN uv sync --no-cache
+COPY . ./
+RUN uv pip install -e .
 
 ENV PATH="/opt/etl/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -27,8 +28,6 @@ RUN mkdir -p /data/.prefect
 CMD ["prefect", "server", "start", "--host", "0.0.0.0", "--port", "4200"]
 
 FROM base AS worker
-
-COPY deploy_all.py /opt/etl/deploy_all.py
 
 CMD ["/bin/sh", "-c", "\
     python /opt/etl/deploy_all.py && \

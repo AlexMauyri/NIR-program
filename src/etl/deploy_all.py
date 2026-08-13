@@ -1,28 +1,30 @@
 import os
 
-from flows.fetch_assets import fetch_all_assets
+from flows import daily_etl_pipeline
+from configs import DBConfig, MinioConfig
 
-DEFAULT_DB_URL = os.environ.get(
-    "POSTGRES_URL",
-    "postgresql://admin:admin@localhost:5433/stocks"
-)
+
+DEFAULT_DB_CONFIG = DBConfig()
+DEFAULT_MINIO_CONFIG = MinioConfig()
 
 FLOWS = [
     {
-        "flow": fetch_all_assets,
+        "flow": daily_etl_pipeline,
         "name": "daily-etl",
         "cron": "0 9 * * *",
         "parameters": {
-            "db_url": DEFAULT_DB_URL,
+            "db_config": DEFAULT_DB_CONFIG,
+            "minio_config": DEFAULT_MINIO_CONFIG,
         },
     },
     {
-        "flow": fetch_all_assets,
+        "flow": daily_etl_pipeline,
         "name": "backfill-etl",
         "cron": None,
         "parameters": {
-            "start_date": "2020-01-01",
-            "db_url": DEFAULT_DB_URL,
+            "start_date": "2024-01-01",
+            "db_config": DEFAULT_DB_CONFIG,
+            "minio_config": DEFAULT_MINIO_CONFIG,
         },
     },
 ]
