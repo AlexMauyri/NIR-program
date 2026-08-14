@@ -2,9 +2,10 @@ import logging
 from typing import Any
 
 import psycopg
-from prefect import task, get_run_logger
+from prefect import task
 
 from configs import DBConfig
+from utils import _get_logger
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ def load_ohlc_to_db(
     table_name: str,
     db_config: DBConfig,
 ) -> int:
-    logger = get_run_logger()
+    logger = _get_logger()
     logger.info(">>> LOAD %s: %d rows into %s", table_name, len(records), table_name)
 
     if not records:

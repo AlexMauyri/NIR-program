@@ -4,9 +4,10 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 import talib as ta
-from prefect import task, get_run_logger
+from prefect import task
 
 from configs import FeatureParams, FEATURE_CONFIG, REQUIRED_FEATURES
+from utils import _get_logger
 
 
 def _safe_div(a: pd.Series, b: pd.Series) -> pd.Series:
@@ -145,7 +146,7 @@ def build_feature_matrix(
     required_features: Optional[List[str]] = None,
     end_date: Optional[date] = None,
 ) -> pd.DataFrame:
-    logger = get_run_logger()
+    logger = _get_logger()
     required_features = required_features or REQUIRED_FEATURES
 
     logger.info(">>> BUILD features")

@@ -1,11 +1,12 @@
 import os
 
-from flows import daily_etl_pipeline
-from configs import DBConfig, MinioConfig
+from flows import daily_etl_pipeline, train_all_models
+from configs import DBConfig, MinioConfig, MLFlowConfig
 
 
 DEFAULT_DB_CONFIG = DBConfig()
 DEFAULT_MINIO_CONFIG = MinioConfig()
+DEFAULT_MLFLOW_CONFIG = MLFlowConfig()
 
 FLOWS = [
     {
@@ -22,9 +23,20 @@ FLOWS = [
         "name": "backfill-etl",
         "cron": None,
         "parameters": {
-            "start_date": "2024-01-01",
+            "start_date": "2021-01-01",
             "db_config": DEFAULT_DB_CONFIG,
             "minio_config": DEFAULT_MINIO_CONFIG,
+        },
+    },
+    {
+        "flow": train_all_models,
+        "name": "monthly-model-retrain",
+        "cron": "0 2 1 * *",
+        "parameters": {
+            "months_back": 24,
+            "test_ratio": 0.2,
+            "minio_config": DEFAULT_MINIO_CONFIG,
+            "mlflow_config": DEFAULT_MLFLOW_CONFIG,
         },
     },
 ]

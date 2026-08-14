@@ -3,15 +3,14 @@ import tempfile
 
 import pandas as pd
 from datetime import date
-from prefect import task, get_run_logger
+from prefect import task
+
+from utils import _get_logger
 
 
-@task(name="save_parquet")
-def save_to_parquet(df: pd.DataFrame, start_date: date, end_date: date) -> str:
-    logger = get_run_logger()
-    start_str = start_date.strftime("%Y%m%d")
-    end_str = end_date.strftime("%Y%m%d")
-    filename = f"features_{start_str}_{end_str}.parquet"
+@task(name="save_dataframe_to_parquet")
+def save_dataframe_to_parquet(df: pd.DataFrame, filename: str)-> str:
+    logger = _get_logger()
 
     logger.info(">>> SAVE parquet: %s", filename)
     local_path = os.path.join(tempfile.gettempdir(), filename)

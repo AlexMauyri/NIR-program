@@ -2,12 +2,13 @@ import datetime
 from typing import Optional
 
 import requests
-from prefect import task, get_run_logger
+from prefect import task
+from utils import _get_logger
 
 
 @task(retries=3, retry_delay_seconds=10, log_prints=True)
 def _paginated_fetch(url: str, params: dict, session: requests.Session) -> list[dict]:
-    logger = get_run_logger()
+    logger = _get_logger()
     records: list[dict] = []
     offset = 0
     while True:
@@ -30,7 +31,7 @@ def fetch_sber_moex(
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
-    logger = get_run_logger()
+    logger = _get_logger()
     logger.info(">>> FETCH sber %s..%s", start_date, end_date)
     sess = session or requests.Session()
     url = (
@@ -51,6 +52,7 @@ def _fetch_yahoo_ohlc(
     end_date: str,
     session: requests.Session,
 ) -> list[dict]:
+    logger = _get_logger()
     start_ts = int(datetime.datetime.strptime(start_date, "%Y-%m-%d").timestamp())
     end_ts = int(datetime.datetime.strptime(end_date, "%Y-%m-%d").timestamp())
 
@@ -73,7 +75,11 @@ def _fetch_yahoo_ohlc(
         raise ValueError(f"Yahoo returned empty result for {ticker}: {payload}")
 
     meta = result[0]
-    timestamps = meta["timestamp"]
+    timestamps = meta.get("timestamp")
+    if not timestamps:
+        logger.warning("No data available for %s %s..%s", ticker, start_date, end_date)
+        return []
+
     quote = meta["indicators"]["quote"][0]
 
     records: list[dict] = []
@@ -102,7 +108,7 @@ def fetch_usdrub_yahoo(
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
-    logger = get_run_logger()
+    logger = _get_logger()
     logger.info(">>> FETCH usd_rub %s..%s", start_date, end_date)
     sess = session or requests.Session()
     records = _fetch_yahoo_ohlc("USDRUB=X", start_date, end_date, sess)
@@ -118,7 +124,7 @@ def fetch_gold_yahoo(
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
-    logger = get_run_logger()
+    logger = _get_logger()
     logger.info(">>> FETCH gold %s..%s", start_date, end_date)
     sess = session or requests.Session()
     records = _fetch_yahoo_ohlc("GC=F", start_date, end_date, sess)
@@ -134,7 +140,7 @@ def fetch_brent_yahoo(
     end_date: str,
     session: Optional[requests.Session] = None,
 ) -> list[dict]:
-    logger = get_run_logger()
+    logger = _get_logger()
     logger.info(">>> FETCH oil %s..%s", start_date, end_date)
     sess = session or requests.Session()
     records = _fetch_yahoo_ohlc("BZ=F", start_date, end_date, sess)

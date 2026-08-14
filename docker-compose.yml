@@ -29,6 +29,7 @@ services:
       minio:
         condition: service_healthy
     environment:
+      MLFLOW_ALLOWED_HOSTS: "*"
       MLFLOW_TRACKING_URI: http://0.0.0.0:5000
       MLFLOW_BACKEND_STORE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/mlflow_db
       MLFLOW_REGISTRY_STORE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-db:5432/mlflow_db
@@ -44,6 +45,7 @@ services:
       --default-artifact-root s3://mlflow/
       --host 0.0.0.0
       --port 5000
+      --allowed-hosts '*'
     restart: always
     networks:
       - nir_network
@@ -169,6 +171,12 @@ services:
     container_name: prefect-worker
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_REGISTRY_URI: http://mlflow:5000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      GIT_PYTHON_REFRESH: quiet
       POSTGRES_HOST: postgres-db
       POSTGRES_PORT_INNER: ${POSTGRES_PORT_INNER}
       POSTGRES_USER: ${POSTGRES_USER}

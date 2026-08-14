@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 
-from prefect import flow, get_run_logger
+from prefect import flow
 
 from configs import DBConfig
 from tasks import (
@@ -15,6 +15,7 @@ from tasks import (
     load_ohlc_to_db,
     transform_ohlc_records,
 )
+from utils import _get_logger
 
 _ASSET_CONFIG = {
     "stock": (fetch_sber_moex, "stock_prices"),
@@ -63,7 +64,7 @@ def ingest_market_data(
     chunk_days: int = 30,
     sleep_seconds: float = 1.5,
 ):
-    logger = get_run_logger()
+    logger = _get_logger()
 
     logger.info("=" * 60)
     logger.info("FLOW: ingest-market-data")

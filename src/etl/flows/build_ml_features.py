@@ -1,11 +1,11 @@
 from datetime import date
 from typing import Dict, List, Optional
 
-from prefect import flow, get_run_logger
+from prefect import flow
 
 from configs import DBConfig, FEATURE_CONFIG, MinioConfig, REQUIRED_FEATURES
-from tasks import extract_from_db, build_feature_matrix, save_to_parquet, upload_to_minio
-
+from tasks import extract_from_db, build_feature_matrix, save_dataframe_to_parquet, upload_to_minio
+from utils import _get_logger
 
 @flow(name="build_ml_features", log_prints=True)
 def build_ml_features(
@@ -16,7 +16,7 @@ def build_ml_features(
     tables: Optional[Dict[str, str]] = None,
     required_features: Optional[List[str]] = None,
 ) -> Dict:
-    logger = get_run_logger()
+    logger = _get_logger()
 
     db_config = db_config or DBConfig()
     minio_config = minio_config or MinioConfig()
@@ -57,11 +57,15 @@ def build_ml_features(
     logger.info("  Date range:         %s — %s", min_date, max_date)
     logger.info("  Feature list:       %s", feature_cols)
     logger.info("-" * 60)
-
-    local_path = save_to_parquet(features_df, start_date, end_date)
-
-    upload_to_minio(local_path, minio_config, start_date, end_date)
-
+    
+    filename = f"features_{min_date}_{max_date}.parquet"
+    local_path = save_dataframe_to_parquet(features_df, filename)
+    
+    versioned = f"historical/{filename}"
+    latest = "latest/features.parquet"
+    upload_to_minio(local_path, versioned, minio_config)
+    upload_to_minio(local_path, latest, minio_config)
+    
     logger.info("=" * 60)
     logger.info("FLOW COMPLETED SUCCESSFULLY")
     logger.info("=" * 60)

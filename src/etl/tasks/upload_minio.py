@@ -1,27 +1,22 @@
-from prefect import task, get_run_logger
+from prefect import task
 from datetime import date
 from configs import MinioConfig
-from clients import MinioUploader
+from clients import MinioClient
 
+from utils import _get_logger
 
-@task(name="upload_minio")
+@task(name="upload_to_minio")
 def upload_to_minio(
     local_path: str,
+    object_name: str,
     minio_config: MinioConfig,
-    start_date: date,
-    end_date: date,
 ) -> None:
-    logger = get_run_logger()
-    start_str = start_date.strftime("%Y%m%d")
-    end_str = end_date.strftime("%Y%m%d")
+    logger = _get_logger()
 
     logger.info(">>> UPLOAD to MinIO: %s", local_path)
-    uploader = MinioUploader(minio_config)
+    minio_client = MinioClient(minio_config)
 
-    versioned = f"historical/features_{start_str}_{end_str}.parquet"
-    uploader.upload(local_path, versioned)
-    logger.info("Uploaded: s3://%s/%s", minio_config.bucket, versioned)
-
-    uploader.upload(local_path, "latest/features.parquet")
-    logger.info("Uploaded: s3://%s/latest/features.parquet", minio_config.bucket)
+    minio_client.upload(local_path, object_name)
+    
+    logger.info("Uploaded: s3://%s/%s", minio_config.bucket, object_name)
     logger.info("<<< UPLOAD to MinIO: done")

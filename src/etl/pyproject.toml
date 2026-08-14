@@ -7,13 +7,18 @@ requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.43.69",
     "botocore>=1.43.69",
+    "mlflow>=2.8.0",
     "numpy>=2.5.2",
-    "pandas>=3.0.5",
+    "optuna>=4.9.0",
+    "optuna-integration[xgboost]>=4.9.0",
+    "pandas>=2.0.0,<3",
     "prefect>=3.8.2",
     "psycopg[binary]>=3.3.4",
-    "pyarrow>=25.0.1",
+    "pyarrow>=4.0.0,<25",
     "requests>=2.34.2",
+    "scikit-learn>=1.9.0",
     "ta-lib>=0.7.1",
+    "xgboost>=3.4.0",
 ]
 
 [build-system]
@@ -21,4 +26,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["flows", "tasks"]
+packages = ["flows", "tasks", "clients", "configs", "models", "utils"]
