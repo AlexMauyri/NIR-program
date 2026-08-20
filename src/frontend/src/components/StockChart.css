@@ -1,0 +1,87 @@
+.stock-chart {
+  width: 100%;
+}
+
+.stock-chart__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stock-chart__title {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.stock-chart__periods {
+  display: flex;
+  gap: 4px;
+  background: #f2f2f2;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.stock-chart__period-btn {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #444;
+}
+
+.stock-chart__period-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.stock-chart__period-btn--active {
+  background: #ffffff;
+  color: #2563eb;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.stock-chart__tooltip {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  padding: 10px 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 0.85rem;
+  min-width: 160px;
+}
+
+.stock-chart__tooltip-date {
+  color: #666;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.stock-chart__tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0;
+}
+
+.stock-chart__tooltip-label {
+  color: #888;
+}
+
+.stock-chart__tooltip-value {
+  font-weight: 500;
+  color: #222;
+}
+
+.stock-chart__error,
+.stock-chart__empty {
+  padding: 24px;
+  text-align: center;
+  color: #666;
+  border: 1px dashed #ddd;
+  border-radius: 8px;
+}

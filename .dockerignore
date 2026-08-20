@@ -1,1 +1,8 @@
 **/__pycache__
+node_modules
+dist
+dist-ssr
+.git
+.gitignore
+*.md
+npm-debug.log*

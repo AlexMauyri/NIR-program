@@ -1,0 +1,45 @@
+.chart-skeleton {
+  width: 100%;
+  height: 360px;
+  border-radius: 8px;
+  background: #f2f2f2;
+  overflow: hidden;
+  position: relative;
+}
+
+.chart-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.6) 50%,
+    transparent 100%
+  );
+  animation: chart-skeleton-shimmer 1.4s infinite;
+}
+
+.chart-skeleton__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.chart-skeleton__bar {
+  flex: 1;
+  background: #dcdcdc;
+  border-radius: 4px 4px 0 0;
+}
+
+@keyframes chart-skeleton-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}

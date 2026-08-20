@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
+from dependencies import get_db
 from models import StockPrice
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])

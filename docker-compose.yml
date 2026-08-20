@@ -194,7 +194,22 @@ services:
     networks:
       - nir_network
 
-
+  frontend:
+    build:
+      context: ./src/frontend/
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+    container_name: frontend
+    image: frontend:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - nir_network
 
 volumes:
   postgres_data:
