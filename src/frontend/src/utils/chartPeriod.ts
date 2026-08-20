@@ -8,11 +8,6 @@ const PERIOD_DAYS: Record<Exclude<ChartPeriod, 'all'>, number> = {
   year: 365,
 };
 
-/**
- * Фильтрует уже загруженные точки по периоду относительно самой свежей
- * даты в наборе данных (а не относительно "сегодня" — данные могут быть
- * не самыми последними). Для 'all' возвращает данные как есть.
- */
 export function filterByPeriod(
   data: StockPricePoint[],
   period: ChartPeriod,

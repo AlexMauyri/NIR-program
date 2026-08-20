@@ -1,12 +1,3 @@
-/**
- * Общие типы, связанные с сетевым слоем приложения.
- */
-
-/**
- * Категория ошибки, нормализованная под нужды UI.
- * Реализовано как const-объект (а не enum), т.к. проект собирается
- * с erasableSyntaxOnly/isolatedModules — enum там запрещён.
- */
 export const ApiErrorType = {
   /** Ошибка валидации/некорректный запрос и т.п. (4xx) */
   CLIENT_ERROR: 'CLIENT_ERROR',
@@ -28,14 +19,12 @@ export const ApiErrorType = {
 
 export type ApiErrorType = (typeof ApiErrorType)[keyof typeof ApiErrorType];
 
-/** Тело ошибки, которое ожидается от backend (может отличаться — тогда fallback). */
 export interface ApiErrorPayload {
   message?: string;
   code?: string;
   details?: unknown;
 }
 
-/** Унифицированная ошибка, которую бросает http-клиент. Ловится в UI единообразно. */
 export class ApiError extends Error {
   public readonly type: ApiErrorType;
   public readonly status?: number;
@@ -52,7 +41,7 @@ export class ApiError extends Error {
     this.type = type;
     this.status = status;
     this.payload = payload;
-    // Восстановление прототипной цепочки при таргете ES5
+
     Object.setPrototypeOf(this, ApiError.prototype);
   }
 }

@@ -16,33 +16,35 @@
   margin: 0;
 }
 
-.stock-chart__periods {
+.stock-chart__controls {
   display: flex;
-  gap: 4px;
-  background: #f2f2f2;
-  padding: 4px;
-  border-radius: 8px;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.stock-chart__period-btn {
-  border: none;
+.stock-chart__reset-btn {
+  border: 1px solid #2563eb;
   background: transparent;
+  color: #2563eb;
   padding: 6px 12px;
   font-size: 0.85rem;
   border-radius: 6px;
   cursor: pointer;
-  color: #444;
 }
 
-.stock-chart__period-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
+.stock-chart__reset-btn:hover {
+  background: #eff4ff;
 }
 
-.stock-chart__period-btn--active {
-  background: #ffffff;
-  color: #2563eb;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+.stock-chart__plot {
+  width: 100%;
+  cursor: grab;
+  user-select: none;
+}
+
+.stock-chart__plot--dragging {
+  cursor: grabbing;
 }
 
 .stock-chart__tooltip {

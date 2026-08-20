@@ -9,12 +9,6 @@ interface GetStockHistoryParams {
   offset?: number;
 }
 
-/**
- * Загружает историю цен по тикеру. По умолчанию берёт максимум записей
- * (10000, лимит backend), т.к. фильтрация по периоду на клиенте (см.
- * StockChart) выполняется уже над загруженным массивом — без повторных
- * запросов при переключении периода.
- */
 export function getStockHistory(
   params: GetStockHistoryParams = {},
 ): Promise<StockHistoryResponse> {

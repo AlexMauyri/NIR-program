@@ -1,6 +1,5 @@
 import './ChartSkeleton.css';
 
-/** Заглушка на время первичной загрузки графика — сохраняет высоту, чтобы не было прыжка layout. */
 export function ChartSkeleton() {
   return (
     <div className="chart-skeleton" role="status" aria-label="Загрузка графика">

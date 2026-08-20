@@ -7,10 +7,6 @@ interface HealthResponse {
   status: string;
 }
 
-/**
- * Демонстрационный компонент: проверяет доступность backend через /health.
- * Служит примером использования http-клиента и useApi в остальных фичах.
- */
 export function HealthStatus() {
   const fetchHealth = useCallback(() => get<HealthResponse>('/health'), []);
   const { data, error, isLoading, execute } = useApi(fetchHealth);

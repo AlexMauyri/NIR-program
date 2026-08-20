@@ -7,11 +7,6 @@ interface UseApiState<T> {
   isLoading: boolean;
 }
 
-/**
- * Обёртка над произвольным асинхронным запросом (через api/*), которая
- * приводит loading/error/data к единому виду и не роняет приложение
- * при отменённых запросах.
- */
 export function useApi<T, Args extends unknown[]>(
   requestFn: (...args: Args) => Promise<T>,
 ) {
@@ -34,7 +29,6 @@ export function useApi<T, Args extends unknown[]>(
             ? err
             : new ApiError('Непредвиденная ошибка', ApiErrorType.UNKNOWN);
 
-        // Отменённый запрос не считается ошибкой для UI (например, unmount)
         if (apiError.type === ApiErrorType.CANCELLED) {
           setState((prev) => ({ ...prev, isLoading: false }));
           return undefined;
