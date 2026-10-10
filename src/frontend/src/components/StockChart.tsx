@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bar,
   CartesianGrid,
+  Cell,
+  ComposedChart,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,8 +16,18 @@ import type { TooltipContentProps } from 'recharts/types/component/Tooltip';
 import { getStockHistory } from '../api';
 import { useApi } from '../hooks/useApi';
 import { getUserFacingMessage } from '../utils/errorMessages';
+import {
+  calculateBollingerBands,
+  calculateEMA,
+  calculateMACD,
+  calculateRSI,
+  calculateSMA,
+} from '../utils/indicators';
+import type { IndicatorSettings } from '../types/indicators';
+import { DEFAULT_INDICATOR_SETTINGS } from '../types/indicators';
 import type { StockPricePoint } from '../types/stocks';
 import { ChartSkeleton } from './ChartSkeleton';
+import { IndicatorSelector } from './IndicatorSelector';
 import './StockChart.css';
 
 interface StockChartProps {
@@ -25,9 +39,23 @@ interface IndexRange {
   endIndex: number;
 }
 
+/** Точка главного графика цены с примешанными значениями индикаторов (для одного набора Line внутри LineChart). */
+interface PriceChartPoint extends StockPricePoint {
+  sma: number | null;
+  ema: number | null;
+  bbUpper: number | null;
+  bbMiddle: number | null;
+  bbLower: number | null;
+}
+
+/** Сколько последних дней показываем при первой загрузке (дальше — зум/панорамирование). */
 const DEFAULT_WINDOW_DAYS = 30;
+/** Минимальное число точек в видимом окне — не даём зумиться до одной точки. */
 const MIN_VISIBLE_POINTS = 5;
+/** Насколько сильно меняется ширина окна на одно "деление" колеса. */
 const ZOOM_STEP = 0.15;
+/** Общий syncId для главного графика и панелей RSI/MACD — синхронизирует курсор/тултип по индексу. */
+const SYNC_ID = 'stock-chart-sync';
 
 function formatDateShort(isoDate: string): string {
   const d = new Date(isoDate);
@@ -39,6 +67,7 @@ function formatDateFull(isoDate: string): string {
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+/** Индексы окна по умолчанию — последние DEFAULT_WINDOW_DAYS дней от конца массива. */
 function defaultIndexRange(data: StockPricePoint[]): IndexRange {
   const lastIndex = data.length - 1;
   if (data.length === 0) {
@@ -57,6 +86,7 @@ function defaultIndexRange(data: StockPricePoint[]): IndexRange {
   };
 }
 
+/** Ограничивает диапазон [start, end] границами [0, maxIndex], сохраняя его ширину, если возможно. */
 function clampRange(startIndex: number, endIndex: number, maxIndex: number): IndexRange {
   let start = startIndex;
   let end = endIndex;
@@ -77,9 +107,9 @@ function ChartTooltip({ active, payload }: Partial<TooltipContentProps<number, s
   if (!active || !payload || payload.length === 0) {
     return null;
   }
-  const point = payload[0].payload as StockPricePoint;
+  const point = payload[0].payload as PriceChartPoint;
 
-  const formatPrice = (value: number | null) =>
+  const formatPrice = (value: number | null | undefined) =>
     value != null ? `${value.toFixed(2)} ₽` : '—';
 
   return (
@@ -103,15 +133,65 @@ function ChartTooltip({ active, payload }: Partial<TooltipContentProps<number, s
         <span className="stock-chart__tooltip-label">Минимум</span>
         <span className="stock-chart__tooltip-value">{formatPrice(point.low)}</span>
       </div>
+      {point.sma != null && (
+        <div className="stock-chart__tooltip-row">
+          <span className="stock-chart__tooltip-label">SMA</span>
+          <span className="stock-chart__tooltip-value">{formatPrice(point.sma)}</span>
+        </div>
+      )}
+      {point.ema != null && (
+        <div className="stock-chart__tooltip-row">
+          <span className="stock-chart__tooltip-label">EMA</span>
+          <span className="stock-chart__tooltip-value">{formatPrice(point.ema)}</span>
+        </div>
+      )}
     </div>
   );
 }
 
+function SimpleTooltip({ active, payload, label, formatter }: {
+  active?: boolean;
+  payload?: { name: string; value: number | null; color?: string }[];
+  label?: string;
+  formatter?: (value: number) => string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="stock-chart__tooltip">
+      <div className="stock-chart__tooltip-date">{formatDateFull(label ?? '')}</div>
+      {payload.map((entry) =>
+        entry.value != null ? (
+          <div className="stock-chart__tooltip-row" key={entry.name}>
+            <span className="stock-chart__tooltip-label" style={{ color: entry.color }}>
+              {entry.name}
+            </span>
+            <span className="stock-chart__tooltip-value">
+              {formatter ? formatter(entry.value) : entry.value.toFixed(2)}
+            </span>
+          </div>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+/**
+ * График исторических цен закрытия с техническими индикаторами.
+ * Зум — колесо мыши над графиком (приближает/отдаляет относительно
+ * позиции курсора). Панорамирование — зажать левую кнопку мыши и
+ * тащить влево/вправо. Индикаторы считаются на клиенте из уже
+ * загруженных данных (utils/indicators.ts), без повторных запросов.
+ */
 export function StockChart({ ticker = 'SBER' }: StockChartProps) {
   const [range, setRange] = useState<IndexRange | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [indicatorSettings, setIndicatorSettings] = useState<IndicatorSettings>(
+    DEFAULT_INDICATOR_SETTINGS,
+  );
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Актуальный range в ref — нужен внутри нативных обработчиков событий,
+  // чтобы не пересоздавать их и не ловить устаревшее замыкание.
   const rangeRef = useRef<IndexRange | null>(null);
   const dragStartRef = useRef<{ clientX: number; range: IndexRange } | null>(null);
 
@@ -124,15 +204,19 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
 
   const points = data?.data ?? [];
 
+  // Данные приходят от новых к старым (order_by desc) — для графика нужен
+  // хронологический порядок, разворачиваем один раз здесь.
   const chronological = useMemo(
     () => [...points].sort((a, b) => (a.date < b.date ? -1 : 1)),
     [points],
   );
 
+  // При первой загрузке данных (или смене тикера) выставляем окно по умолчанию.
   useEffect(() => {
     if (chronological.length > 0) {
       setRange(defaultIndexRange(chronological));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chronological.length, ticker]);
 
   useEffect(() => {
@@ -143,6 +227,7 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
     setRange({ startIndex: 0, endIndex: Math.max(chronological.length - 1, 0) });
   };
 
+  // Зум колесом мыши, центрированный на позиции курсора над графиком.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -161,6 +246,7 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
       const width = endIndex - startIndex;
       const anchorIndex = startIndex + fraction * width;
 
+      // deltaY < 0 — прокрутка "от себя" (обычно вверх) — приближаем.
       const zoomFactor = e.deltaY < 0 ? 1 - ZOOM_STEP : 1 + ZOOM_STEP;
       const newWidth = Math.min(
         maxIndex,
@@ -177,6 +263,7 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
     return () => container.removeEventListener('wheel', handleWheel);
   }, [chronological.length]);
 
+  // Панорамирование зажатой левой кнопкой мыши.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -189,6 +276,7 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
       const rect = container.getBoundingClientRect();
       const dx = e.clientX - drag.clientX;
       const width = drag.range.endIndex - drag.range.startIndex;
+      // Тащим вправо (dx > 0) — окно должно сдвинуться к более ранним датам.
       const indexDelta = -(dx / rect.width) * width;
 
       setRange(
@@ -209,7 +297,7 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
 
     const handleMouseDown = (e: MouseEvent) => {
       const currentRange = rangeRef.current;
-      if (e.button !== 0 || !currentRange) return;
+      if (e.button !== 0 || !currentRange) return; // только левая кнопка
       dragStartRef.current = { clientX: e.clientX, range: currentRange };
       setIsDragging(true);
       window.addEventListener('mousemove', handleMouseMove);
@@ -224,19 +312,133 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
     };
   }, [chronological.length]);
 
+  // --- Индикаторы: считаются на полном загруженном массиве (chronological), ---
+  // --- чтобы окно SMA/EMA/RSI не "проваливалось" в null у левого края зума. ---
+
+  const smaFull = useMemo(
+    () =>
+      indicatorSettings.sma.enabled
+        ? calculateSMA(chronological, indicatorSettings.sma.period)
+        : null,
+    [chronological, indicatorSettings.sma.enabled, indicatorSettings.sma.period],
+  );
+
+  const emaFull = useMemo(
+    () =>
+      indicatorSettings.ema.enabled
+        ? calculateEMA(chronological, indicatorSettings.ema.period)
+        : null,
+    [chronological, indicatorSettings.ema.enabled, indicatorSettings.ema.period],
+  );
+
+  const bollingerFull = useMemo(
+    () =>
+      indicatorSettings.bollinger.enabled
+        ? calculateBollingerBands(
+            chronological,
+            indicatorSettings.bollinger.period,
+            indicatorSettings.bollinger.stdDevMultiplier,
+          )
+        : null,
+    [
+      chronological,
+      indicatorSettings.bollinger.enabled,
+      indicatorSettings.bollinger.period,
+      indicatorSettings.bollinger.stdDevMultiplier,
+    ],
+  );
+
+  const rsiFull = useMemo(
+    () =>
+      indicatorSettings.rsi.enabled
+        ? calculateRSI(chronological, indicatorSettings.rsi.period)
+        : null,
+    [chronological, indicatorSettings.rsi.enabled, indicatorSettings.rsi.period],
+  );
+
+  const macdFull = useMemo(
+    () =>
+      indicatorSettings.macd.enabled
+        ? calculateMACD(
+            chronological,
+            indicatorSettings.macd.fastPeriod,
+            indicatorSettings.macd.slowPeriod,
+            indicatorSettings.macd.signalPeriod,
+          )
+        : null,
+    [
+      chronological,
+      indicatorSettings.macd.enabled,
+      indicatorSettings.macd.fastPeriod,
+      indicatorSettings.macd.slowPeriod,
+      indicatorSettings.macd.signalPeriod,
+    ],
+  );
+
   const visible = useMemo(() => {
     if (!range) return chronological;
     return chronological.slice(range.startIndex, range.endIndex + 1);
   }, [chronological, range]);
 
+  // Данные для главного графика: цена + примешанные значения линейных индикаторов.
+  const priceChartData = useMemo((): PriceChartPoint[] => {
+    if (!range) {
+      return visible.map((p) => ({
+        ...p,
+        sma: null,
+        ema: null,
+        bbUpper: null,
+        bbMiddle: null,
+        bbLower: null,
+      }));
+    }
+    return visible.map((p, i) => {
+      const idx = range.startIndex + i;
+      return {
+        ...p,
+        sma: smaFull ? smaFull[idx].value : null,
+        ema: emaFull ? emaFull[idx].value : null,
+        bbUpper: bollingerFull ? bollingerFull[idx].upper : null,
+        bbMiddle: bollingerFull ? bollingerFull[idx].middle : null,
+        bbLower: bollingerFull ? bollingerFull[idx].lower : null,
+      };
+    });
+  }, [visible, range, smaFull, emaFull, bollingerFull]);
+
+  const rsiChartData = useMemo(() => {
+    if (!range || !rsiFull) return [];
+    return visible.map((p, i) => ({
+      date: p.date,
+      rsi: rsiFull[range.startIndex + i].value,
+    }));
+  }, [visible, range, rsiFull]);
+
+  const macdChartData = useMemo(() => {
+    if (!range || !macdFull) return [];
+    return visible.map((p, i) => {
+      const idx = range.startIndex + i;
+      return {
+        date: p.date,
+        macd: macdFull[idx].macd,
+        signal: macdFull[idx].signal,
+        histogram: macdFull[idx].histogram,
+      };
+    });
+  }, [visible, range, macdFull]);
+
   const yDomain = useMemo((): [number, number] | undefined => {
-    const closes = visible.map((p) => p.close).filter((v): v is number => v != null);
-    if (closes.length === 0) return undefined;
-    const min = Math.min(...closes);
-    const max = Math.max(...closes);
+    const values: number[] = [];
+    priceChartData.forEach((p) => {
+      if (p.close != null) values.push(p.close);
+      if (p.bbUpper != null) values.push(p.bbUpper);
+      if (p.bbLower != null) values.push(p.bbLower);
+    });
+    if (values.length === 0) return undefined;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
     const padding = (max - min) * 0.05 || max * 0.05 || 1;
     return [Math.floor(min - padding), Math.ceil(max + padding)];
-  }, [visible]);
+  }, [priceChartData]);
 
   if (isLoading && points.length === 0) {
     return <ChartSkeleton />;
@@ -272,6 +474,8 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
         )}
       </div>
 
+      <IndicatorSelector settings={indicatorSettings} onChange={setIndicatorSettings} />
+
       <div
         ref={containerRef}
         className={
@@ -279,7 +483,11 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
         }
       >
         <ResponsiveContainer width="100%" height={400}>
-          <LineChart data={visible} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+          <LineChart
+            data={priceChartData}
+            margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
+            syncId={SYNC_ID}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
             <XAxis
               dataKey="date"
@@ -293,6 +501,44 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
               width={64}
             />
             <Tooltip content={<ChartTooltip />} />
+
+            {indicatorSettings.bollinger.enabled && (
+              <>
+                <Line
+                  type="monotone"
+                  dataKey="bbUpper"
+                  stroke="#94a3b8"
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                  name="BB верх"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="bbLower"
+                  stroke="#94a3b8"
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                  name="BB низ"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="bbMiddle"
+                  stroke="#a855f7"
+                  strokeWidth={1}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                  name="BB середина"
+                />
+              </>
+            )}
+
             <Line
               type="monotone"
               dataKey="close"
@@ -301,10 +547,135 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
               dot={false}
               connectNulls
               isAnimationActive={false}
+              name="Закрытие"
             />
+
+            {indicatorSettings.sma.enabled && (
+              <Line
+                type="monotone"
+                dataKey="sma"
+                stroke="#f59e0b"
+                strokeWidth={1.5}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                name={`SMA(${indicatorSettings.sma.period})`}
+              />
+            )}
+
+            {indicatorSettings.ema.enabled && (
+              <Line
+                type="monotone"
+                dataKey="ema"
+                stroke="#10b981"
+                strokeWidth={1.5}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                name={`EMA(${indicatorSettings.ema.period})`}
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {indicatorSettings.rsi.enabled && (
+        <div className="stock-chart__panel">
+          <span className="stock-chart__panel-title">
+            RSI({indicatorSettings.rsi.period})
+          </span>
+          <ResponsiveContainer width="100%" height={140}>
+            <LineChart
+              data={rsiChartData}
+              margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
+              syncId={SYNC_ID}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDateShort}
+                minTickGap={32}
+                tick={{ fontSize: 11 }}
+              />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} width={64} />
+              <ReferenceLine y={70} stroke="#dc2626" strokeDasharray="3 3" />
+              <ReferenceLine y={30} stroke="#16a34a" strokeDasharray="3 3" />
+              <Tooltip
+                content={
+                  <SimpleTooltip formatter={(v) => v.toFixed(1)} />
+                }
+              />
+              <Line
+                type="monotone"
+                dataKey="rsi"
+                stroke="#7c3aed"
+                strokeWidth={1.5}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                name="RSI"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {indicatorSettings.macd.enabled && (
+        <div className="stock-chart__panel">
+          <span className="stock-chart__panel-title">
+            MACD({indicatorSettings.macd.fastPeriod}/{indicatorSettings.macd.slowPeriod}/
+            {indicatorSettings.macd.signalPeriod})
+          </span>
+          <ResponsiveContainer width="100%" height={160}>
+            <ComposedChart
+              data={macdChartData}
+              margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
+              syncId={SYNC_ID}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDateShort}
+                minTickGap={32}
+                tick={{ fontSize: 11 }}
+              />
+              <YAxis tick={{ fontSize: 11 }} width={64} />
+              <ReferenceLine y={0} stroke="#ccc" />
+              <Tooltip content={<SimpleTooltip formatter={(v) => v.toFixed(3)} />} />
+              <Bar dataKey="histogram" name="Гистограмма" isAnimationActive={false}>
+                {macdChartData.map((entry, i) => (
+                  <Cell
+                    key={i}
+                    fill={
+                      entry.histogram != null && entry.histogram >= 0 ? '#16a34a' : '#dc2626'
+                    }
+                  />
+                ))}
+              </Bar>
+              <Line
+                type="monotone"
+                dataKey="macd"
+                stroke="#2563eb"
+                strokeWidth={1.5}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                name="MACD"
+              />
+              <Line
+                type="monotone"
+                dataKey="signal"
+                stroke="#f97316"
+                strokeWidth={1.5}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                name="Сигнальная"
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
