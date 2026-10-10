@@ -4,6 +4,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -32,6 +33,11 @@ import './StockChart.css';
 
 interface StockChartProps {
   ticker?: string;
+  predictions?: {
+    dates: string[];
+    values: number[];
+    model_name?: string;
+  } | null;
 }
 
 interface IndexRange {
@@ -46,6 +52,7 @@ interface PriceChartPoint extends StockPricePoint {
   bbUpper: number | null;
   bbMiddle: number | null;
   bbLower: number | null;
+  prediction?: number | null;
 }
 
 /** Сколько последних дней показываем при первой загрузке (дальше — зум/панорамирование). */
@@ -115,24 +122,28 @@ function ChartTooltip({ active, payload }: Partial<TooltipContentProps<number, s
   return (
     <div className="stock-chart__tooltip">
       <div className="stock-chart__tooltip-date">{formatDateFull(point.date)}</div>
-      <div className="stock-chart__tooltip-row">
-        <span className="stock-chart__tooltip-label">Открытие</span>
-        <span className="stock-chart__tooltip-value">{formatPrice(point.open)}</span>
-      </div>
-      <div className="stock-chart__tooltip-row">
-        <span className="stock-chart__tooltip-label">Закрытие</span>
-        <span className="stock-chart__tooltip-value stock-chart__tooltip-value--close">
-          {formatPrice(point.close)}
-        </span>
-      </div>
-      <div className="stock-chart__tooltip-row">
-        <span className="stock-chart__tooltip-label">Максимум</span>
-        <span className="stock-chart__tooltip-value">{formatPrice(point.high)}</span>
-      </div>
-      <div className="stock-chart__tooltip-row">
-        <span className="stock-chart__tooltip-label">Минимум</span>
-        <span className="stock-chart__tooltip-value">{formatPrice(point.low)}</span>
-      </div>
+      {point.close != null && (
+        <>
+          <div className="stock-chart__tooltip-row">
+            <span className="stock-chart__tooltip-label">Открытие</span>
+            <span className="stock-chart__tooltip-value">{formatPrice(point.open)}</span>
+          </div>
+          <div className="stock-chart__tooltip-row">
+            <span className="stock-chart__tooltip-label">Закрытие</span>
+            <span className="stock-chart__tooltip-value stock-chart__tooltip-value--close">
+              {formatPrice(point.close)}
+            </span>
+          </div>
+          <div className="stock-chart__tooltip-row">
+            <span className="stock-chart__tooltip-label">Максимум</span>
+            <span className="stock-chart__tooltip-value">{formatPrice(point.high)}</span>
+          </div>
+          <div className="stock-chart__tooltip-row">
+            <span className="stock-chart__tooltip-label">Минимум</span>
+            <span className="stock-chart__tooltip-value">{formatPrice(point.low)}</span>
+          </div>
+        </>
+      )}
       {point.sma != null && (
         <div className="stock-chart__tooltip-row">
           <span className="stock-chart__tooltip-label">SMA</span>
@@ -143,6 +154,17 @@ function ChartTooltip({ active, payload }: Partial<TooltipContentProps<number, s
         <div className="stock-chart__tooltip-row">
           <span className="stock-chart__tooltip-label">EMA</span>
           <span className="stock-chart__tooltip-value">{formatPrice(point.ema)}</span>
+        </div>
+      )}
+      {point.prediction != null && (
+        <div className="stock-chart__tooltip-row">
+          <span className="stock-chart__tooltip-label">Прогноз</span>
+          <span
+            className="stock-chart__tooltip-value"
+            style={{ color: '#ff9800', fontWeight: 600 }}
+          >
+            {formatPrice(point.prediction)}
+          </span>
         </div>
       )}
     </div>
@@ -182,7 +204,7 @@ function SimpleTooltip({ active, payload, label, formatter }: {
  * тащить влево/вправо. Индикаторы считаются на клиенте из уже
  * загруженных данных (utils/indicators.ts), без повторных запросов.
  */
-export function StockChart({ ticker = 'SBER' }: StockChartProps) {
+export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
   const [range, setRange] = useState<IndexRange | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [indicatorSettings, setIndicatorSettings] = useState<IndicatorSettings>(
@@ -204,12 +226,35 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
 
   const points = data?.data ?? [];
 
-  // Данные приходят от новых к старым (order_by desc) — для графика нужен
-  // хронологический порядок, разворачиваем один раз здесь.
-  const chronological = useMemo(
-    () => [...points].sort((a, b) => (a.date < b.date ? -1 : 1)),
-    [points],
-  );
+  // Хронологический базовый массив котировок, дополненный датами из прогноза,
+  // которых нет в исторических данных (например, точка D+1 для forecast).
+  const chronological = useMemo(() => {
+    const sortedPoints = [...points].sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!predictions || predictions.dates.length === 0) {
+      return sortedPoints;
+    }
+
+    const existingDates = new Set(sortedPoints.map((p) => p.date));
+    const extraPoints: StockPricePoint[] = [];
+
+    predictions.dates.forEach((d) => {
+      if (!existingDates.has(d)) {
+        extraPoints.push({
+          date: d,
+          open: null,
+          high: null,
+          low: null,
+          close: null,
+        });
+      }
+    });
+
+    if (extraPoints.length === 0) {
+      return sortedPoints;
+    }
+
+    return [...sortedPoints, ...extraPoints].sort((a, b) => (a.date < b.date ? -1 : 1));
+  }, [points, predictions]);
 
   // При первой загрузке данных (или смене тикера) выставляем окно по умолчанию.
   useEffect(() => {
@@ -382,28 +427,52 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
 
   // Данные для главного графика: цена + примешанные значения линейных индикаторов.
   const priceChartData = useMemo((): PriceChartPoint[] => {
+    const predMap = new Map<string, number>();
+    const actualMap = new Map<string, StockPricePoint>();
+    points.forEach((p) => actualMap.set(p.date, p));
+
+    if (predictions && predictions.dates.length > 0) {
+      predictions.dates.forEach((d, idx) => {
+        predMap.set(d, predictions.values[idx]);
+      });
+    }
+
     if (!range) {
-      return visible.map((p) => ({
-        ...p,
-        sma: null,
-        ema: null,
-        bbUpper: null,
-        bbMiddle: null,
-        bbLower: null,
-      }));
+      return visible.map((p) => {
+        const actual = actualMap.get(p.date);
+        return {
+          ...p,
+          open: actual ? actual.open : null,
+          high: actual ? actual.high : null,
+          low: actual ? actual.low : null,
+          close: actual ? actual.close : null,
+          sma: null,
+          ema: null,
+          bbUpper: null,
+          bbMiddle: null,
+          bbLower: null,
+          prediction: predMap.get(p.date) ?? null,
+        };
+      });
     }
     return visible.map((p, i) => {
       const idx = range.startIndex + i;
+      const actual = actualMap.get(p.date);
       return {
         ...p,
-        sma: smaFull ? smaFull[idx].value : null,
-        ema: emaFull ? emaFull[idx].value : null,
-        bbUpper: bollingerFull ? bollingerFull[idx].upper : null,
-        bbMiddle: bollingerFull ? bollingerFull[idx].middle : null,
-        bbLower: bollingerFull ? bollingerFull[idx].lower : null,
+        open: actual ? actual.open : null,
+        high: actual ? actual.high : null,
+        low: actual ? actual.low : null,
+        close: actual ? actual.close : null,
+        sma: smaFull && smaFull[idx] ? smaFull[idx].value : null,
+        ema: emaFull && emaFull[idx] ? emaFull[idx].value : null,
+        bbUpper: bollingerFull && bollingerFull[idx] ? bollingerFull[idx].upper : null,
+        bbMiddle: bollingerFull && bollingerFull[idx] ? bollingerFull[idx].middle : null,
+        bbLower: bollingerFull && bollingerFull[idx] ? bollingerFull[idx].lower : null,
+        prediction: predMap.get(p.date) ?? null,
       };
     });
-  }, [visible, range, smaFull, emaFull, bollingerFull]);
+  }, [visible, range, smaFull, emaFull, bollingerFull, predictions, points]);
 
   const rsiChartData = useMemo(() => {
     if (!range || !rsiFull) return [];
@@ -432,6 +501,7 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
       if (p.close != null) values.push(p.close);
       if (p.bbUpper != null) values.push(p.bbUpper);
       if (p.bbLower != null) values.push(p.bbLower);
+      if (p.prediction != null) values.push(p.prediction);
     });
     if (values.length === 0) return undefined;
     const min = Math.min(...values);
@@ -501,6 +571,7 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
               width={64}
             />
             <Tooltip content={<ChartTooltip />} />
+            <Legend verticalAlign="top" height={36} iconType="plainline" />
 
             {indicatorSettings.bollinger.enabled && (
               <>
@@ -547,8 +618,23 @@ export function StockChart({ ticker = 'SBER' }: StockChartProps) {
               dot={false}
               connectNulls
               isAnimationActive={false}
-              name="Закрытие"
+              name="Факт"
             />
+
+            {predictions && predictions.dates.length > 0 && (
+              <Line
+                type="monotone"
+                dataKey="prediction"
+                name={`Прогноз ${predictions.model_name ?? ''}`.trim()}
+                stroke="#ff9800"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={{ r: 3, fill: '#ff9800', strokeWidth: 0 }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            )}
 
             {indicatorSettings.sma.enabled && (
               <Line

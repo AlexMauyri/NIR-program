@@ -70,22 +70,18 @@ export default function HomePage() {
           {error}
         </div>
       )}
-      {predictions && (
-        <div
-          className="debug-predictions"
-          style={{
-            marginBottom: "12px",
-            padding: "8px 12px",
-            backgroundColor: "var(--code-bg, #f4f3ec)",
-            borderRadius: "6px",
-            fontSize: "0.85rem",
-            color: "var(--text-h, #08060d)",
-          }}
-        >
-          Загружено {predictions.predictions.length} точек прогноза для {predictions.model_name}
-        </div>
-      )}
-      <StockChart ticker="SBER" />
+      <StockChart
+        ticker="SBER"
+        predictions={
+          predictions
+            ? {
+                dates: predictions.dates,
+                values: predictions.predictions,
+                model_name: predictions.model_name,
+              }
+            : null
+        }
+      />
     </>
   );
 }
