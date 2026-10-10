@@ -60,7 +60,10 @@ class MLModelAdapter:
             import xgboost as xgb
 
             if isinstance(model, xgb.Booster):
-                return model.predict(xgb.DMatrix(df))
+                names = getattr(model, "feature_names", None)
+                if names is None:
+                    return model.predict(xgb.DMatrix(df.values))
+                return model.predict(xgb.DMatrix(df.values, feature_names=names))
         return np.asarray(model.predict(df))
 
     def predict(self, model_name: str, features_df: pd.DataFrame) -> np.ndarray:
