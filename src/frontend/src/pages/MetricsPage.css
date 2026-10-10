@@ -1,0 +1,80 @@
+.metrics-page {
+  padding: 1rem 0;
+}
+
+.metrics-page h1 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+
+.model-section {
+  margin-bottom: 2.5rem;
+}
+
+.model-section h2 {
+  margin-bottom: 0.75rem;
+}
+
+.metrics-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border, #e5e4e7);
+  border-radius: 8px;
+  background-color: var(--bg, #fff);
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+
+.metrics-table th,
+.metrics-table td {
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--border, #e5e4e7);
+}
+
+.metrics-table th {
+  color: var(--text, #6b6375);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background-color: var(--code-bg, #f4f3ec);
+}
+
+.metrics-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.metrics-table tr.production {
+  background-color: var(--accent-bg, rgba(170, 59, 255, 0.05));
+  border-left: 4px solid var(--accent, #aa3bff);
+}
+
+.metrics-table tr.production td:first-child {
+  padding-left: calc(0.85rem - 4px);
+  font-weight: 600;
+}
+
+.metrics-empty-versions,
+.metrics-empty-state {
+  color: var(--text, #6b6375);
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+.metrics-error {
+  color: #dc2626;
+  padding: 1rem;
+  background-color: rgba(220, 38, 38, 0.1);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.metrics-loading {
+  color: var(--text, #6b6375);
+  padding: 2rem 0;
+}

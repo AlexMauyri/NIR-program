@@ -1,0 +1,34 @@
+.top-nav {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border, #e5e4e7);
+  background: var(--code-bg, #f4f3ec);
+}
+
+.top-nav a {
+  color: var(--text, #6b6375);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding: 0.25rem 0;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.top-nav a:hover {
+  color: var(--text-h, #08060d);
+}
+
+.top-nav a.active {
+  color: var(--text-h, #08060d);
+  border-bottom-color: var(--accent, #aa3bff);
+}
+
+.page-content {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+  box-sizing: border-box;
+}

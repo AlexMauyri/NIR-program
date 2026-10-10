@@ -1,12 +1,15 @@
-import HomePage from './pages/HomePage';
-import './App.css';
+import { Routes, Route } from "react-router-dom";
+import Layout from "./components/Layout";
+import HomePage from "./pages/HomePage";
+import MetricsPage from "./pages/MetricsPage";
 
-function App() {
+export default function App() {
   return (
-    <div className="app">
-      <HomePage />
-    </div>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<HomePage />} />
+        <Route path="metrics" element={<MetricsPage />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;
