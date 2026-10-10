@@ -40,5 +40,5 @@ class BaseModelWrapper(ABC):
         pass
 
     @abstractmethod
-    def log_to_mlflow(self, run_id: str) -> None:
+    def log_to_mlflow(self, run_id: str, signature=None, input_example=None) -> None:
         pass

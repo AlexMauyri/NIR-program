@@ -26,8 +26,12 @@ def list_production_models(client: MlflowClient = Depends(get_mlflow_client)):
     
     result = []
     for rm in registered:
-        for v in rm.latest_versions:
-            if "production" in v.aliases:
+        try:
+            versions = client.search_model_versions(f"name='{rm.name}'")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"MLFlow error: {e}")
+        for v in versions:
+            if "production" in (getattr(v, "aliases", None) or []):
                 metrics = {}
                 try:
                     run = client.get_run(v.run_id)

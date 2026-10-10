@@ -83,10 +83,12 @@ class XGBoostModelWrapper(BaseModelWrapper):
         self._model.load_model(path)
         self._is_fitted = True
 
-    def log_to_mlflow(self, run_id: str) -> None:
+    def log_to_mlflow(self, run_id: str, signature=None, input_example=None) -> None:
         logged_model = mlflow.xgboost.log_model(
             self._model,
             name=self.config.name,
+            signature=signature,
+            input_example=input_example,
         )
         return logged_model.model_id
 

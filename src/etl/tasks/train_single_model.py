@@ -7,7 +7,7 @@ import numpy as np
 from prefect import task
 import mlflow
 
-from configs import ModelConfig, MLFlowConfig, MinioConfig
+from configs import ModelConfig, MLFlowConfig, MinioConfig, REQUIRED_FEATURES
 from models import create_model
 from tasks import calculate_metrics, upload_to_minio
 from clients import MLFlowModelManager
@@ -102,7 +102,13 @@ def train_single_model(
             upload_to_minio.fn(tmp.name, model_config.minio_artifact_key, minio_config)
             os.unlink(tmp.name)
 
-        model_id = wrapper.log_to_mlflow(mlflow.active_run().info.run_id)
+        X_train_df = pd.DataFrame(X_train, columns=REQUIRED_FEATURES)
+        model_id = wrapper.log_to_mlflow(
+            mlflow.active_run().info.run_id,
+            signature=mlflow.models.infer_signature(X_train_df, y_train),
+            input_example=X_train_df.head(3),
+        )
+        mlflow.set_tag("required_features", ",".join(REQUIRED_FEATURES))
 
         new_rmse = test_metrics["rmse"]
         should_promote, improvement = _make_decision(
@@ -114,6 +120,10 @@ def train_single_model(
         new_version = mlflow_manager.register_new_version(
             model_name,
             model_id,
+        )
+        
+        mlflow_manager.client.set_model_version_tag(
+            model_name, new_version, "required_features", ",".join(REQUIRED_FEATURES)
         )
 
         if should_promote:

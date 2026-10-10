@@ -17,10 +17,18 @@ def get_mlflow_client() -> MlflowClient:
         raise MLFlowConnectionError(f"MLFlow unavailable: {e}")
 
 
+def _get_minio_endpoint_url() -> str:
+    endpoint = settings.minio_endpoint
+    if endpoint.startswith(("http://", "https://")):
+        return endpoint
+    scheme = "https" if settings.minio_use_ssl else "http"
+    return f"{scheme}://{endpoint}"
+
+
 def _get_s3_client():
     return boto3.client(
         "s3",
-        endpoint_url=settings.minio_endpoint,
+        endpoint_url=_get_minio_endpoint_url(),
         aws_access_key_id=settings.minio_access_key,
         aws_secret_access_key=settings.minio_secret_key,
         config=Config(signature_version="s3v4"),
