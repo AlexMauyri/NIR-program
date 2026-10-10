@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 from prefect import flow
@@ -60,11 +60,21 @@ def build_ml_features(
     
     filename = f"features_{min_date}_{max_date}.parquet"
     local_path = save_dataframe_to_parquet(features_df, filename)
-    
     versioned = f"historical/{filename}"
-    latest = "latest/features.parquet"
     upload_to_minio(local_path, versioned, minio_config)
-    upload_to_minio(local_path, latest, minio_config)
+
+    latest_end_date = end_date + timedelta(days=1)
+    logger.info("Building latest features matrix with end_date shifted to: %s", latest_end_date)
+    latest_features_df = build_feature_matrix(
+        raw_data,
+        FEATURE_CONFIG,
+        target_key="SBER",
+        required_features=required_features,
+        end_date=latest_end_date,
+    )
+    latest_local_path = save_dataframe_to_parquet(latest_features_df, "features_latest.parquet")
+    latest = "latest/features.parquet"
+    upload_to_minio(latest_local_path, latest, minio_config)
     
     logger.info("=" * 60)
     logger.info("FLOW COMPLETED SUCCESSFULLY")
