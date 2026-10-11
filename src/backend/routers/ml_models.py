@@ -46,24 +46,66 @@ def list_production_models(client: MlflowClient = Depends(get_mlflow_client)):
     
     result = []
     for rm in registered:
+        v = None
+        # 1. Прямой поиск по alias 'production' через MlflowClient
         try:
-            versions = client.search_model_versions(f"name='{rm.name}'")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"MLFlow error: {e}")
-        for v in versions:
-            if "production" in (getattr(v, "aliases", None) or []):
-                metrics = {}
+            v = client.get_model_version_by_alias(rm.name, "production")
+        except Exception:
+            v = None
+
+        # 2. Поиск через rm.aliases словаря RegisteredModel
+        if not v:
+            aliases_dict = getattr(rm, "aliases", None) or {}
+            for alias_name, ver in aliases_dict.items():
+                if alias_name.lower() == "production":
+                    try:
+                        v = client.get_model_version(rm.name, str(ver))
+                        break
+                    except Exception:
+                        pass
+
+        # 3. Fallback: поиск по версиям с детальным запросом get_model_version
+        # (search_model_versions в MLflow не заполняет поле aliases)
+        if not v:
+            try:
+                versions = client.search_model_versions(f"name='{rm.name}'")
+                for cand in versions:
+                    try:
+                        detailed = client.get_model_version(rm.name, str(cand.version))
+                        cand_aliases = [a.lower() for a in (getattr(detailed, "aliases", None) or [])]
+                        if "production" in cand_aliases:
+                            v = detailed
+                            break
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # 4. Если alias production не установлен ни на одной версии,
+        # берём последнюю версию модели, чтобы селектор на фронтенде не блокировался
+        if not v:
+            try:
+                versions = client.search_model_versions(f"name='{rm.name}'")
+                if versions:
+                    v = max(versions, key=lambda item: int(item.version))
+            except Exception:
+                pass
+
+        if v:
+            metrics = {}
+            if v.run_id:
                 try:
                     run = client.get_run(v.run_id)
                     metrics = dict(run.data.metrics)
                 except Exception:
                     pass
-                
-                result.append(ModelInfo(
-                    name=rm.name,
-                    version=v.version,
-                    metrics=metrics,
-                ))
+
+            result.append(ModelInfo(
+                name=rm.name,
+                version=str(v.version),
+                alias="production" if "production" in [a.lower() for a in (getattr(v, "aliases", None) or [])] else (v.aliases[0] if getattr(v, "aliases", None) else ""),
+                metrics=metrics,
+            ))
     
     return result
 
@@ -79,9 +121,17 @@ def _version_metrics(client: MlflowClient, v) -> ModelVersionMetrics:
         except Exception:
             pass
 
+    aliases = list(getattr(v, "aliases", None) or [])
+    if not aliases and hasattr(v, "name"):
+        try:
+            detailed = client.get_model_version(v.name, str(v.version))
+            aliases = list(getattr(detailed, "aliases", None) or [])
+        except Exception:
+            pass
+
     return ModelVersionMetrics(
         version=int(v.version),
-        aliases=list(getattr(v, "aliases", None) or []),
+        aliases=aliases,
         created_at=datetime.fromtimestamp(v.creation_timestamp / 1000),
         metrics=metrics,
         params=params,

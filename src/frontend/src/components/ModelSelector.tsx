@@ -16,7 +16,9 @@ export default function ModelSelector({ models, selected, onChange, disabled }: 
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled || models.length === 0}
     >
-      <option value="" disabled>Выберите модель</option>
+      <option value="" disabled>
+        {models.length === 0 ? "Модели не найдены" : "Выберите модель"}
+      </option>
       {models.map((m) => (
         <option key={m.name} value={m.name}>{m.name}</option>
       ))}

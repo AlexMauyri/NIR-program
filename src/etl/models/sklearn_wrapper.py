@@ -86,6 +86,7 @@ class SklearnModelWrapper(BaseModelWrapper):
             name=self.config.name,
             signature=signature,
             input_example=input_example,
+            skops_trusted_types=["sklearn.tree._tree.Tree"],
         )
         return logged_model.model_id
         

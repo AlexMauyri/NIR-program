@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { StockChart } from "../components/StockChart";
 import ModelSelector from "../components/ModelSelector";
-import { getModels } from "../api/mlModels";
+import { getModels, getAllModelMetrics } from "../api/mlModels";
 import type { ModelInfo } from "../api/mlModels";
 import { getPredictions } from "../api/predictions";
 import type { PredictionResponse } from "../types/predictions";
@@ -15,8 +15,39 @@ export default function HomePage() {
 
   useEffect(() => {
     getModels()
-      .then(setModels)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .then(async (fetchedModels) => {
+        if (fetchedModels && fetchedModels.length > 0) {
+          setModels(fetchedModels);
+        } else {
+          // Если /ml-models вернул пустой список, пробуем взять имена из /ml-models/metrics
+          try {
+            const metricsData = await getAllModelMetrics();
+            const fallbackModels: ModelInfo[] = Object.keys(metricsData.models).map((name) => ({
+              name,
+              version: "",
+              alias: "production",
+              metrics: {},
+            }));
+            setModels(fallbackModels);
+          } catch {
+            setModels([]);
+          }
+        }
+      })
+      .catch(async (e) => {
+        try {
+          const metricsData = await getAllModelMetrics();
+          const fallbackModels: ModelInfo[] = Object.keys(metricsData.models).map((name) => ({
+            name,
+            version: "",
+            alias: "production",
+            metrics: {},
+          }));
+          setModels(fallbackModels);
+        } catch {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      });
   }, []);
 
   useEffect(() => {

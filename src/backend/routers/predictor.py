@@ -1,4 +1,5 @@
 import threading
+import io
 from datetime import date
 from typing import Optional
 
@@ -29,7 +30,7 @@ class PredictResponse(BaseModel):
 
 def load_features(s3_client, start_date: date, end_date: date) -> pd.DataFrame:
     response = s3_client.get_object(Bucket=settings.minio_bucket, Key="latest/features.parquet")
-    df = pd.read_parquet(response["Body"])
+    df = pd.read_parquet(io.BytesIO(response["Body"].read()))
 
     mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
     df = df.loc[mask]
