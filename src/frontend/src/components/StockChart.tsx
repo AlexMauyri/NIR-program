@@ -38,6 +38,7 @@ interface StockChartProps {
     values: number[];
     model_name?: string;
   } | null;
+  onVisibleRangeChange?: (startDate: string, endDate: string) => void;
 }
 
 interface IndexRange {
@@ -45,7 +46,7 @@ interface IndexRange {
   endIndex: number;
 }
 
-/** Точка главного графика цены с примешанными значениями индикаторов (для одного набора Line внутри LineChart). */
+/** Точка главного графика цены с примешанными значениями индикаторов. */
 interface PriceChartPoint extends StockPricePoint {
   sma: number | null;
   ema: number | null;
@@ -55,13 +56,9 @@ interface PriceChartPoint extends StockPricePoint {
   prediction?: number | null;
 }
 
-/** Сколько последних дней показываем при первой загрузке (дальше — зум/панорамирование). */
 const DEFAULT_WINDOW_DAYS = 30;
-/** Минимальное число точек в видимом окне — не даём зумиться до одной точки. */
 const MIN_VISIBLE_POINTS = 5;
-/** Насколько сильно меняется ширина окна на одно "деление" колеса. */
 const ZOOM_STEP = 0.15;
-/** Общий syncId для главного графика и панелей RSI/MACD — синхронизирует курсор/тултип по индексу. */
 const SYNC_ID = 'stock-chart-sync';
 
 function formatDateShort(isoDate: string): string {
@@ -93,7 +90,7 @@ function defaultIndexRange(data: StockPricePoint[]): IndexRange {
   };
 }
 
-/** Ограничивает диапазон [start, end] границами [0, maxIndex], сохраняя его ширину, если возможно. */
+/** Ограничивает диапазон [start, end] границами [0, maxIndex], сохраняя его ширину. */
 function clampRange(startIndex: number, endIndex: number, maxIndex: number): IndexRange {
   let start = startIndex;
   let end = endIndex;
@@ -197,25 +194,30 @@ function SimpleTooltip({ active, payload, label, formatter }: {
   );
 }
 
-/**
- * График исторических цен закрытия с техническими индикаторами.
- * Зум — колесо мыши над графиком (приближает/отдаляет относительно
- * позиции курсора). Панорамирование — зажать левую кнопку мыши и
- * тащить влево/вправо. Индикаторы считаются на клиенте из уже
- * загруженных данных (utils/indicators.ts), без повторных запросов.
- */
-export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
+export function StockChart({ ticker = 'SBER', predictions, onVisibleRangeChange }: StockChartProps) {
   const [range, setRange] = useState<IndexRange | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [indicatorSettings, setIndicatorSettings] = useState<IndicatorSettings>(
     DEFAULT_INDICATOR_SETTINGS,
   );
 
+  // containerEl — это DOM-узел, положенный в state. Нужен, чтобы useEffect'ы
+  // с нативными обработчиками гарантированно срабатывали после появления
+  // контейнера в DOM (при первом рендере компонент возвращает <ChartSkeleton />,
+  // и containerRef.current === null в момент первого прохода useEffect).
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // Актуальный range в ref — нужен внутри нативных обработчиков событий,
-  // чтобы не пересоздавать их и не ловить устаревшее замыкание.
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+
+  const setContainerRef = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    setContainerEl(node);
+  }, []);
+
   const rangeRef = useRef<IndexRange | null>(null);
+  const chronologicalRef = useRef<StockPricePoint[]>([]);
   const dragStartRef = useRef<{ clientX: number; range: IndexRange } | null>(null);
+  /** Первая дата массива на момент последней инициализации — для компенсации сдвига индексов. */
+  const prevFirstDateRef = useRef<string | null>(null);
 
   const fetchHistory = useCallback(() => getStockHistory({ ticker }), [ticker]);
   const { data, error, isLoading, execute } = useApi(fetchHistory);
@@ -226,8 +228,6 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
 
   const points = data?.data ?? [];
 
-  // Хронологический базовый массив котировок, дополненный датами из прогноза,
-  // которых нет в исторических данных (например, точка D+1 для forecast).
   const chronological = useMemo(() => {
     const sortedPoints = [...points].sort((a, b) => (a.date < b.date ? -1 : 1));
     if (!predictions || predictions.dates.length === 0) {
@@ -256,30 +256,66 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
     return [...sortedPoints, ...extraPoints].sort((a, b) => (a.date < b.date ? -1 : 1));
   }, [points, predictions]);
 
-  // При первой загрузке данных (или смене тикера) выставляем окно по умолчанию.
-  useEffect(() => {
-    if (chronological.length > 0) {
-      setRange(defaultIndexRange(chronological));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chronological.length, ticker]);
-
+  // Refs для нативных обработчиков.
   useEffect(() => {
     rangeRef.current = range;
   }, [range]);
+
+  useEffect(() => {
+    chronologicalRef.current = chronological;
+  }, [chronological]);
+
+  // Инициализация range при первой загрузке данных.
+  // При подгрузке прогнозов (первая дата массива сдвинулась влево)
+  // НЕ сбрасываем зум, а компенсируем сдвиг индексов.
+  useEffect(() => {
+    if (chronological.length === 0) return;
+    const firstDate = chronological[0].date;
+
+    if (prevFirstDateRef.current === null) {
+      prevFirstDateRef.current = firstDate;
+      setRange(defaultIndexRange(chronological));
+      return;
+    }
+    if (firstDate === prevFirstDateRef.current) {
+      return;
+    }
+    const oldIdx = chronological.findIndex((p) => p.date === prevFirstDateRef.current);
+    if (oldIdx === -1) {
+      prevFirstDateRef.current = firstDate;
+      setRange(defaultIndexRange(chronological));
+      return;
+    }
+    setRange((prev) =>
+      prev
+        ? { startIndex: prev.startIndex + oldIdx, endIndex: prev.endIndex + oldIdx }
+        : prev,
+    );
+    prevFirstDateRef.current = firstDate;
+  }, [chronological]);
+
+  // Уведомляем родителя об изменении видимого диапазона.
+  useEffect(() => {
+    if (!onVisibleRangeChange || !range || chronological.length === 0) return;
+    const first = chronological[range.startIndex];
+    const last = chronological[range.endIndex];
+    if (!first || !last) return;
+    onVisibleRangeChange(first.date, last.date);
+  }, [range, chronological, onVisibleRangeChange]);
 
   const handleResetZoom = () => {
     setRange({ startIndex: 0, endIndex: Math.max(chronological.length - 1, 0) });
   };
 
-  // Зум колесом мыши, центрированный на позиции курсора над графиком.
+  // Зум колесом мыши, центрированный на позиции курсора.
   useEffect(() => {
-    const container = containerRef.current;
+    const container = containerEl;
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
       const currentRange = rangeRef.current;
-      const maxIndex = chronological.length - 1;
+      const data = chronologicalRef.current;
+      const maxIndex = data.length - 1;
       if (!currentRange || maxIndex <= 0) return;
 
       e.preventDefault();
@@ -291,7 +327,6 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
       const width = endIndex - startIndex;
       const anchorIndex = startIndex + fraction * width;
 
-      // deltaY < 0 — прокрутка "от себя" (обычно вверх) — приближаем.
       const zoomFactor = e.deltaY < 0 ? 1 - ZOOM_STEP : 1 + ZOOM_STEP;
       const newWidth = Math.min(
         maxIndex,
@@ -306,22 +341,23 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
 
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, [chronological.length]);
+  }, [containerEl]);
 
-  // Панорамирование зажатой левой кнопкой мыши.
+  // Панорамирование ЛКМ.
   useEffect(() => {
-    const container = containerRef.current;
+    const container = containerEl;
     if (!container) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const drag = dragStartRef.current;
-      const maxIndex = chronological.length - 1;
+      const data = chronologicalRef.current;
+      const maxIndex = data.length - 1;
       if (!drag || maxIndex <= 0) return;
 
       const rect = container.getBoundingClientRect();
       const dx = e.clientX - drag.clientX;
       const width = drag.range.endIndex - drag.range.startIndex;
-      // Тащим вправо (dx > 0) — окно должно сдвинуться к более ранним датам.
+      // Тащим вправо (dx > 0) — окно сдвигается к более ранним датам.
       const indexDelta = -(dx / rect.width) * width;
 
       setRange(
@@ -342,7 +378,7 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
 
     const handleMouseDown = (e: MouseEvent) => {
       const currentRange = rangeRef.current;
-      if (e.button !== 0 || !currentRange) return; // только левая кнопка
+      if (e.button !== 0 || !currentRange) return;
       dragStartRef.current = { clientX: e.clientX, range: currentRange };
       setIsDragging(true);
       window.addEventListener('mousemove', handleMouseMove);
@@ -355,10 +391,7 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [chronological.length]);
-
-  // --- Индикаторы: считаются на полном загруженном массиве (chronological), ---
-  // --- чтобы окно SMA/EMA/RSI не "проваливалось" в null у левого края зума. ---
+  }, [containerEl]);
 
   const smaFull = useMemo(
     () =>
@@ -425,7 +458,6 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
     return chronological.slice(range.startIndex, range.endIndex + 1);
   }, [chronological, range]);
 
-  // Данные для главного графика: цена + примешанные значения линейных индикаторов.
   const priceChartData = useMemo((): PriceChartPoint[] => {
     const predMap = new Map<string, number>();
     const actualMap = new Map<string, StockPricePoint>();
@@ -478,7 +510,7 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
     if (!range || !rsiFull) return [];
     return visible.map((p, i) => ({
       date: p.date,
-      rsi: rsiFull[range.startIndex + i].value,
+      rsi: rsiFull[range.startIndex + i]?.value ?? null,
     }));
   }, [visible, range, rsiFull]);
 
@@ -486,11 +518,12 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
     if (!range || !macdFull) return [];
     return visible.map((p, i) => {
       const idx = range.startIndex + i;
+      const item = macdFull[idx];
       return {
         date: p.date,
-        macd: macdFull[idx].macd,
-        signal: macdFull[idx].signal,
-        histogram: macdFull[idx].histogram,
+        macd: item?.macd ?? null,
+        signal: item?.signal ?? null,
+        histogram: item?.histogram ?? null,
       };
     });
   }, [visible, range, macdFull]);
@@ -547,7 +580,7 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
       <IndicatorSelector settings={indicatorSettings} onChange={setIndicatorSettings} />
 
       <div
-        ref={containerRef}
+        ref={setContainerRef}
         className={
           'stock-chart__plot' + (isDragging ? ' stock-chart__plot--dragging' : '')
         }
@@ -686,11 +719,7 @@ export function StockChart({ ticker = 'SBER', predictions }: StockChartProps) {
               <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} width={64} />
               <ReferenceLine y={70} stroke="#dc2626" strokeDasharray="3 3" />
               <ReferenceLine y={30} stroke="#16a34a" strokeDasharray="3 3" />
-              <Tooltip
-                content={
-                  <SimpleTooltip formatter={(v) => v.toFixed(1)} />
-                }
-              />
+              <Tooltip content={<SimpleTooltip formatter={(v) => v.toFixed(1)} />} />
               <Line
                 type="monotone"
                 dataKey="rsi"

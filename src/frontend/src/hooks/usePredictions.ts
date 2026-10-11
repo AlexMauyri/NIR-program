@@ -11,6 +11,7 @@ interface UsePredictionsResult {
   predictions: PredictionResponse | null;
   isLoading: boolean;
   error: string | null;
+  minLoadedDate: string | null;
   loadRange: (startDate: string, endDate: string) => Promise<void>;
 }
 
@@ -66,6 +67,7 @@ export function usePredictions(selectedModel: string | null): UsePredictionsResu
   const [predictions, setPredictions] = useState<PredictionResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [minLoadedDate, setMinLoadedDate] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const loadedRef = useRef<DateRange[]>([]);
@@ -117,6 +119,10 @@ export function usePredictions(selectedModel: string | null): UsePredictionsResu
               }
             }
             setPredictions(buildResponse(selectedModel, byDateRef.current));
+            if (data.dates.length > 0) {
+              const earliest = data.dates.reduce((a, b) => (b < a ? b : a));
+              setMinLoadedDate((prev) => (prev && prev < earliest ? prev : earliest));
+            }
           } catch (e) {
             if (controller.signal.aborted) return;
             setError(e instanceof Error ? e.message : String(e));
@@ -143,6 +149,7 @@ export function usePredictions(selectedModel: string | null): UsePredictionsResu
     setPredictions(null);
     setError(null);
     setIsLoading(false);
+    setMinLoadedDate(null);
     if (!selectedModel) return;
 
     const end = new Date();
@@ -154,5 +161,5 @@ export function usePredictions(selectedModel: string | null): UsePredictionsResu
     return () => controller.abort();
   }, [selectedModel, loadRange]);
 
-  return { predictions, isLoading, error, loadRange };
+  return { predictions, isLoading, error, minLoadedDate, loadRange };
 }

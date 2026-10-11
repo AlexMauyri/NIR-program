@@ -1,15 +1,35 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { StockChart } from "../components/StockChart";
 import ModelSelector from "../components/ModelSelector";
 import { getModels, getAllModelMetrics } from "../api/mlModels";
 import type { ModelInfo } from "../api/mlModels";
 import { usePredictions } from "../hooks/usePredictions";
 
+const BATCH_DAYS = 90;
+const PREFETCH_THRESHOLD_DAYS = 15;
+const DAY_MS = 86_400_000;
+
+function shiftIsoDate(isoDate: string, days: number): string {
+  const time = new Date(`${isoDate}T00:00:00Z`).getTime();
+  return new Date(time + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+function daysBetween(from: string, to: string): number {
+  const diff = new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime();
+  return Math.round(diff / DAY_MS);
+}
+
 export default function HomePage() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const { predictions, isLoading, error: predictionsError } = usePredictions(selectedModel);
+  const {
+    predictions,
+    isLoading,
+    error: predictionsError,
+    minLoadedDate,
+    loadRange,
+  } = usePredictions(selectedModel);
 
   const chartPredictions = useMemo(
     () =>
@@ -21,6 +41,19 @@ export default function HomePage() {
           }
         : null,
     [predictions],
+  );
+
+  const handleVisibleRangeChange = useCallback(
+    (startDate: string) => {
+      if (!selectedModel || !minLoadedDate) return;
+      if (startDate >= minLoadedDate) return;
+      if (daysBetween(startDate, minLoadedDate) > PREFETCH_THRESHOLD_DAYS) return;
+
+      const nextEnd = shiftIsoDate(minLoadedDate, -1);
+      const nextStart = shiftIsoDate(nextEnd, -(BATCH_DAYS - 1));
+      void loadRange(nextStart, nextEnd);
+    },
+    [selectedModel, minLoadedDate, loadRange],
   );
 
   useEffect(() => {
@@ -92,7 +125,11 @@ export default function HomePage() {
           {modelsError ?? predictionsError}
         </div>
       )}
-      <StockChart ticker="SBER" predictions={chartPredictions} />
+      <StockChart
+        ticker="SBER"
+        predictions={chartPredictions}
+        onVisibleRangeChange={handleVisibleRangeChange}
+      />
     </>
   );
 }
