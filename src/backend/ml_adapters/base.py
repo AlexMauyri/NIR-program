@@ -81,7 +81,7 @@ class MLModelAdapter:
                 if names is None:
                     return model.predict(xgb.DMatrix(df.values))
                 return model.predict(xgb.DMatrix(df.values, feature_names=names))
-        return np.asarray(model.predict(df.values))
+        return np.asarray(model.predict(df))
 
     def _resolve_version(self, model_name: str) -> tuple[Any, str]:
         """

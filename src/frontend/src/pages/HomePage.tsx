@@ -1,17 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { StockChart } from "../components/StockChart";
 import ModelSelector from "../components/ModelSelector";
 import { getModels, getAllModelMetrics } from "../api/mlModels";
 import type { ModelInfo } from "../api/mlModels";
-import { getPredictions } from "../api/predictions";
-import type { PredictionResponse } from "../types/predictions";
+import { usePredictions } from "../hooks/usePredictions";
 
 export default function HomePage() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
-  const [predictions, setPredictions] = useState<PredictionResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const { predictions, isLoading, error: predictionsError } = usePredictions(selectedModel);
+
+  const chartPredictions = useMemo(
+    () =>
+      predictions
+        ? {
+            dates: predictions.dates,
+            values: predictions.predictions,
+            model_name: predictions.model_name,
+          }
+        : null,
+    [predictions],
+  );
 
   useEffect(() => {
     getModels()
@@ -45,29 +55,10 @@ export default function HomePage() {
           }));
           setModels(fallbackModels);
         } catch {
-          setError(e instanceof Error ? e.message : String(e));
+          setModelsError(e instanceof Error ? e.message : String(e));
         }
       });
   }, []);
-
-  useEffect(() => {
-    if (!selectedModel) return;
-    const end = new Date();
-    end.setDate(end.getDate() + 7);
-    const start = new Date();
-    start.setDate(start.getDate() - 90);
-
-    setLoading(true);
-    setError(null);
-    getPredictions({
-      model_name: selectedModel,
-      start_date: start.toISOString().slice(0, 10),
-      end_date: end.toISOString().slice(0, 10),
-    })
-      .then(setPredictions)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, [selectedModel]);
 
   return (
     <>
@@ -85,11 +76,11 @@ export default function HomePage() {
           models={models}
           selected={selectedModel}
           onChange={setSelectedModel}
-          disabled={loading}
+          disabled={isLoading}
         />
-        {loading && <span>Загрузка…</span>}
+        {isLoading && <span>Загрузка…</span>}
       </div>
-      {error && (
+      {(modelsError ?? predictionsError) && (
         <div
           className="error"
           style={{
@@ -98,21 +89,10 @@ export default function HomePage() {
             fontSize: "0.9rem",
           }}
         >
-          {error}
+          {modelsError ?? predictionsError}
         </div>
       )}
-      <StockChart
-        ticker="SBER"
-        predictions={
-          predictions
-            ? {
-                dates: predictions.dates,
-                values: predictions.predictions,
-                model_name: predictions.model_name,
-              }
-            : null
-        }
-      />
+      <StockChart ticker="SBER" predictions={chartPredictions} />
     </>
   );
 }
