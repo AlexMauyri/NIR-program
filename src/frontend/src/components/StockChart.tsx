@@ -39,6 +39,9 @@ interface StockChartProps {
     model_name?: string;
   } | null;
   onVisibleRangeChange?: (startDate: string, endDate: string) => void;
+  isPredictionsLoading?: boolean;
+  predictionsError?: string | null;
+  onRetryPredictions?: () => void;
 }
 
 interface IndexRange {
@@ -60,6 +63,7 @@ const DEFAULT_WINDOW_DAYS = 30;
 const MIN_VISIBLE_POINTS = 5;
 const ZOOM_STEP = 0.15;
 const SYNC_ID = 'stock-chart-sync';
+const LOADING_BADGE_DELAY_MS = 300;
 
 function formatDateShort(isoDate: string): string {
   const d = new Date(isoDate);
@@ -105,6 +109,20 @@ function clampRange(startIndex: number, endIndex: number, maxIndex: number): Ind
   start = Math.max(0, Math.round(start));
   end = Math.min(maxIndex, Math.round(end));
   return { startIndex: start, endIndex: end };
+}
+
+/** Возвращает true, только если flag остаётся true дольше delayMs. */
+function useDelayedFlag(flag: boolean, delayMs: number): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!flag) {
+      setVisible(false);
+      return;
+    }
+    const t = setTimeout(() => setVisible(true), delayMs);
+    return () => clearTimeout(t);
+  }, [flag, delayMs]);
+  return visible;
 }
 
 function ChartTooltip({ active, payload }: Partial<TooltipContentProps<number, string>>) {
@@ -194,12 +212,21 @@ function SimpleTooltip({ active, payload, label, formatter }: {
   );
 }
 
-export function StockChart({ ticker = 'SBER', predictions, onVisibleRangeChange }: StockChartProps) {
+export function StockChart({
+  ticker = 'SBER',
+  predictions,
+  onVisibleRangeChange,
+  isPredictionsLoading,
+  predictionsError,
+  onRetryPredictions,
+}: StockChartProps) {
   const [range, setRange] = useState<IndexRange | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [indicatorSettings, setIndicatorSettings] = useState<IndicatorSettings>(
     DEFAULT_INDICATOR_SETTINGS,
   );
+
+  const showLoadingBadge = useDelayedFlag(!!isPredictionsLoading, LOADING_BADGE_DELAY_MS);
 
   // containerEl — это DOM-узел, положенный в state. Нужен, чтобы useEffect'ы
   // с нативными обработчиками гарантированно срабатывали после появления
@@ -696,6 +723,21 @@ export function StockChart({ ticker = 'SBER', predictions, onVisibleRangeChange 
             )}
           </LineChart>
         </ResponsiveContainer>
+
+        {showLoadingBadge && !predictionsError && (
+          <div className="stock-chart__loading-badge">Загрузка прогнозов…</div>
+        )}
+
+        {predictionsError && (
+          <div className="stock-chart__error-badge">
+            <span>Ошибка загрузки</span>
+            {onRetryPredictions && (
+              <button type="button" onClick={onRetryPredictions}>
+                Повторить
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {indicatorSettings.rsi.enabled && (

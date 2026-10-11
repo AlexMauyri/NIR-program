@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { StockChart } from "../components/StockChart";
 import ModelSelector from "../components/ModelSelector";
 import { getModels, getAllModelMetrics } from "../api/mlModels";
@@ -31,6 +31,9 @@ export default function HomePage() {
     loadRange,
   } = usePredictions(selectedModel);
 
+  // Последний запрошенный батч — для кнопки "Повторить" при ошибке.
+  const lastBatchRef = useRef<{ start: string; end: string } | null>(null);
+
   const chartPredictions = useMemo(
     () =>
       predictions
@@ -43,6 +46,10 @@ export default function HomePage() {
     [predictions],
   );
 
+  // Фоновая подгрузка — это когда прогнозы уже есть, но грузится ещё батч.
+  // Плашку в StockChart показываем только для неё (первичная загрузка — скелетон).
+  const isBackgroundLoad = isLoading && !!predictions;
+
   const handleVisibleRangeChange = useCallback(
     (startDate: string) => {
       if (!selectedModel || !minLoadedDate) return;
@@ -51,10 +58,17 @@ export default function HomePage() {
 
       const nextEnd = shiftIsoDate(minLoadedDate, -1);
       const nextStart = shiftIsoDate(nextEnd, -(BATCH_DAYS - 1));
+      lastBatchRef.current = { start: nextStart, end: nextEnd };
       void loadRange(nextStart, nextEnd);
     },
     [selectedModel, minLoadedDate, loadRange],
   );
+
+  const handleRetryPredictions = useCallback(() => {
+    const b = lastBatchRef.current;
+    if (!b) return;
+    void loadRange(b.start, b.end);
+  }, [loadRange]);
 
   useEffect(() => {
     getModels()
@@ -113,7 +127,7 @@ export default function HomePage() {
         />
         {isLoading && <span>Загрузка…</span>}
       </div>
-      {(modelsError ?? predictionsError) && (
+      {modelsError && (
         <div
           className="error"
           style={{
@@ -122,13 +136,16 @@ export default function HomePage() {
             fontSize: "0.9rem",
           }}
         >
-          {modelsError ?? predictionsError}
+          {modelsError}
         </div>
       )}
       <StockChart
         ticker="SBER"
         predictions={chartPredictions}
         onVisibleRangeChange={handleVisibleRangeChange}
+        isPredictionsLoading={isBackgroundLoad}
+        predictionsError={predictionsError}
+        onRetryPredictions={handleRetryPredictions}
       />
     </>
   );

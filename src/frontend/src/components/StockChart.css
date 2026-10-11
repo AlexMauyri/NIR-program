@@ -54,6 +54,7 @@
 }
 
 .stock-chart__plot {
+  position: relative;
   width: 100%;
   cursor: grab;
   user-select: none;
@@ -102,4 +103,46 @@
   color: #666;
   border: 1px dashed #ddd;
   border-radius: 8px;
+}
+
+.stock-chart__loading-badge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 4px 10px;
+  background: rgba(37, 99, 235, 0.9);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.stock-chart__error-badge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 4px 10px;
+  background: rgba(220, 38, 38, 0.9);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 5;
+}
+
+.stock-chart__error-badge button {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.stock-chart__error-badge button:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
